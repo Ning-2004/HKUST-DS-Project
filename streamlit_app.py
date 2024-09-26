@@ -6,6 +6,8 @@ from sklearn.feature_extraction.text import CountVectorizer
 import nltk
 from nltk.corpus import stopwords
 import re
+import joblib  # For saving the model
+import os  # For file handling
 
 # Download NLTK stopwords if not already downloaded
 nltk.download('stopwords', quiet=True)
@@ -38,7 +40,15 @@ st.title("Topic Model Web Tool")
 
 # Sidebar for parameters
 st.sidebar.header("Upload and Parameters")
-uploaded_files = st.sidebar.file_uploader("Choose text files or Excel files", accept_multiple_files=True)
+
+# Training data upload
+st.sidebar.subheader("Upload Training Data")
+training_files = st.sidebar.file_uploader("Choose text files or Excel files for training", accept_multiple_files=True)
+
+# Prediction data upload
+st.sidebar.subheader("Upload Data for Prediction")
+prediction_files = st.sidebar.file_uploader("Choose text files or Excel files for prediction", accept_multiple_files=True)
+
 stopwords_file = st.sidebar.file_uploader("Upload custom stopwords (one per line)", type=["txt"])
 num_topics = st.sidebar.slider("Number of Topics", min_value=2, max_value=10, value=5)
 
@@ -51,31 +61,31 @@ if stopwords_file is not None:
     stopwords_text = stopwords_file.read().decode("utf-8")
     custom_stopwords.update(stopwords_text.splitlines())
 
-texts = []
-
-if uploaded_files:
-    for uploaded_file in uploaded_files:
+# Process training data
+training_texts = []
+if training_files:
+    for uploaded_file in training_files:
         if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
             # Read Excel file
             df = pd.read_excel(uploaded_file)
-            # Assume the text is in the first column; you can customize this as needed
+            # Assume the text is in the first column
             text_column = df.columns[0]  # Modify this if you have a specific column name
             for text in df[text_column].dropna():  # Drop NaN values
                 cleaned_text = clean_text(text, custom_stopwords)
-                texts.append(cleaned_text)
+                training_texts.append(cleaned_text)
         else:
             # Read text file
             text = uploaded_file.read().decode("utf-8")
             cleaned_text = clean_text(text, custom_stopwords)
-            texts.append(cleaned_text)
+            training_texts.append(cleaned_text)
 
-    # Display cleaned texts
-    st.subheader("Uploaded Texts")
-    for i, text in enumerate(texts):
-        st.write(f"**Text {i+1}:** {text[:200]}...")  # Display first 200 characters
+    # Display cleaned training texts
+    st.subheader("Uploaded Training Texts")
+    for i, text in enumerate(training_texts):
+        st.write(f"**Training Text {i+1}:** {text[:200]}...")  # Display first 200 characters
 
     # Perform topic modeling
-    lda_model, vectorizer = perform_topic_modeling(texts, num_topics)
+    lda_model, vectorizer = perform_topic_modeling(training_texts, num_topics)
     topics = display_topics(lda_model, vectorizer)
 
     # Display generated topics
@@ -84,11 +94,50 @@ if uploaded_files:
         st.write(f"**{topic}:** {', '.join(words)}")
 
     # Visualize topic distribution
-    topic_distribution = lda_model.transform(vectorizer.transform(texts))
+    topic_distribution = lda_model.transform(vectorizer.transform(training_texts))
     plt.figure(figsize=(10, 6))
     plt.bar(range(num_topics), topic_distribution.mean(axis=0), color='skyblue')
     plt.xticks(range(num_topics), [f'Topic {i+1}' for i in range(num_topics)])
     plt.xlabel("Topics")
     plt.ylabel("Average Distribution")
-    plt.title("Average Topic Distribution Across Texts")
+    plt.title("Average Topic Distribution Across Training Texts")
     st.pyplot(plt)
+
+    # Button to export model
+    if st.button("Export Model"):
+        model_filename = "lda_model.pkl"
+        joblib.dump(lda_model, model_filename)
+        st.success(f"Model exported as {model_filename}. You can download it [here](./{model_filename}).")
+
+# Process prediction data
+prediction_texts = []
+if prediction_files:
+    for uploaded_file in prediction_files:
+        if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+            # Read Excel file
+            df = pd.read_excel(uploaded_file)
+            # Assume the text is in the first column
+            text_column = df.columns[0]  # Modify this if you have a specific column name
+            for text in df[text_column].dropna():  # Drop NaN values
+                cleaned_text = clean_text(text, custom_stopwords)
+                prediction_texts.append(cleaned_text)
+        else:
+            # Read text file
+            text = uploaded_file.read().decode("utf-8")
+            cleaned_text = clean_text(text, custom_stopwords)
+            prediction_texts.append(cleaned_text)
+
+    # Display cleaned prediction texts
+    st.subheader("Uploaded Prediction Texts")
+    for i, text in enumerate(prediction_texts):
+        st.write(f"**Prediction Text {i+1}:** {text[:200]}...")  # Display first 200 characters
+
+    # Predict topics for the prediction texts
+    if len(prediction_texts) > 0 and 'lda_model' in locals():
+        prediction_dtm = vectorizer.transform(prediction_texts)
+        predictions = lda_model.transform(prediction_dtm)
+
+        # Display topic distribution for prediction texts
+        st.subheader("Topic Distribution for Prediction Texts")
+        for i in range(len(prediction_texts)):
+            st.write(f"**Prediction Text {i+1} Topic Distribution:** {predictions[i]}")
