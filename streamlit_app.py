@@ -1,4 +1,4 @@
-pip install streamlit pandas matplotlib sklearn nltk
+!pip install streamlit pandas matplotlib sklearn nltk
 
 import streamlit as st
 import pandas as pd
